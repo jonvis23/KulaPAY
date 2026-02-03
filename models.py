@@ -1,58 +1,41 @@
 """
-SQLAlchemy models for KulaPay
+SQLModel models for KulaPay USSD backend (Vendor onboarding + dashboard)
 """
-from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, Enum
-from sqlalchemy.orm import relationship
-from sqlalchemy.sql import func
-import enum
-from database import Base
+from __future__ import annotations
+
+from datetime import datetime
+from enum import Enum
+from typing import Optional
+
+from sqlmodel import Field, SQLModel
 
 
-class PaymentType(enum.Enum):
-    """Payment type enumeration"""
-    CASH = "Cash"
-    MPESA = "M-Pesa"
-    CREDIT = "Credit"
+class TransactionType(str, Enum):
+    """Type of transaction recorded for a vendor."""
+
+    SALE = "SALE"
+    CREDIT_PAYMENT = "CREDIT_PAYMENT"
 
 
-class Vendor(Base):
-    """Vendor model representing food vendors"""
-    __tablename__ = "vendors"
+class Vendor(SQLModel, table=True):
+    """Vendor onboarded via KulaPay USSD."""
 
-    id = Column(Integer, primary_key=True, index=True)
-    phone_number = Column(String, unique=True, index=True, nullable=False)
-    business_name = Column(String, nullable=False)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    id: Optional[int] = Field(default=None, primary_key=True)
+    phone_number: str = Field(index=True, unique=True)
+    full_name: str
+    business_name: str
+    pin: str  # 4 digits (validated in logic layer)
+    wallet_balance: float = Field(default=0.0)
+    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
 
-    # Relationship to transactions
-    transactions = relationship("Transaction", back_populates="vendor")
+class Transaction(SQLModel, table=True):
+    """Transaction for a vendor, used to power stats/dashboard."""
 
+    id: Optional[int] = Field(default=None, primary_key=True)
+    vendor_id: int = Field(foreign_key="vendor.id", index=True)
+    amount: float
+    transaction_type: str  # "SALE" or "CREDIT_PAYMENT"
+    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
 
-class Customer(Base):
-    """Customer model representing customers"""
-    __tablename__ = "customers"
-
-    id = Column(Integer, primary_key=True, index=True)
-    phone_number = Column(String, unique=True, index=True, nullable=False)
-    kula_points = Column(Float, default=0.0, nullable=False)
-    credit_limit = Column(Float, default=0.0, nullable=False)
-
-    # Relationship to transactions
-    transactions = relationship("Transaction", back_populates="customer")
-
-
-class Transaction(Base):
-    """Transaction model representing sales transactions"""
-    __tablename__ = "transactions"
-
-    id = Column(Integer, primary_key=True, index=True)
-    vendor_id = Column(Integer, ForeignKey("vendors.id"), nullable=False)
-    customer_phone = Column(String, ForeignKey("customers.phone_number"), nullable=False)
-    amount = Column(Float, nullable=False)
-    payment_type = Column(Enum(PaymentType), nullable=False)
-    timestamp = Column(DateTime(timezone=True), server_default=func.now())
-
-    # Relationships
-    vendor = relationship("Vendor", back_populates="transactions")
-    customer = relationship("Customer", back_populates="transactions")
+    # Simple FK-based link to Vendor via vendor_id; no ORM relationship required.
 

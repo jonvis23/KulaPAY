@@ -1,44 +1,48 @@
 """
-Database configuration and session management for KulaPay
+Async database configuration and session management for KulaPay (SQLModel).
 """
-from sqlalchemy import create_engine
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
+from __future__ import annotations
+
 import os
+
 from dotenv import load_dotenv
+from sqlmodel import SQLModel
+from sqlmodel.ext.asyncio.session import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
+from sqlalchemy.orm import sessionmaker
 
 load_dotenv()
 
-# Database URL from environment variable
-DATABASE_URL = "sqlite:///./kulapay.db"
 
-engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
-
-
-# Create SQLAlchemy engine
-# engine = create_engine(DATABASE_URL, echo=True)
-
-# Create SessionLocal class
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-
-# Create Base class for models
-Base = declarative_base()
+# Use SQLite by default; override with DATABASE_URL (e.g. postgres+asyncpg://...)
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./kulapay.db")
 
 
-def get_db():
+engine: AsyncEngine = create_async_engine(
+    DATABASE_URL,
+    echo=False,
+    future=True,
+)
+
+AsyncSessionLocal = sessionmaker(
+    bind=engine,
+    class_=AsyncSession,
+    expire_on_commit=False,
+)
+
+
+async def get_session() -> AsyncSession:
     """
-    Dependency function to get database session
+    FastAPI dependency to provide an async database session.
     """
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
+    async with AsyncSessionLocal() as session:
+        yield session
 
 
-def init_db():
+async def init_db() -> None:
     """
-    Initialize database - create all tables
+    Initialize database - create all tables defined on SQLModel metadata.
     """
-    Base.metadata.create_all(bind=engine)
+    async with engine.begin() as conn:
+        await conn.run_sync(SQLModel.metadata.create_all)
 
